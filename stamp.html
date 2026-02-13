@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top Ten Stamper — Photo Flow Method</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #ffffff;
+    color: #1a1a1a;
+    min-height: 100vh;
+  }
+
+  header {
+    background: #ffffff;
+    padding: 48px 32px 32px;
+    text-align: center;
+  }
+
+  header img {
+    height: 40px;
+    width: auto;
+    margin-bottom: 12px;
+  }
+
+  header h1 {
+    font-size: 17px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: #999;
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 24px;
+  }
+
+  /* Drop zone */
+  .drop-zone {
+    border: 2px dashed #ddd;
+    border-radius: 12px;
+    padding: 80px 40px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: #fafafa;
+  }
+
+  .drop-zone.drag-over {
+    border-color: #1a1a1a;
+    background: #f5f5f5;
+  }
+
+  .drop-zone h2 {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .drop-zone p {
+    font-size: 14px;
+    color: #777;
+    margin-bottom: 20px;
+  }
+
+  .drop-zone .browse-btn {
+    display: inline-block;
+    padding: 10px 24px;
+    background: #1a1a1a;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .drop-zone .browse-btn:hover { background: #333; }
+
+  .drop-zone .browse-btn:active { background: #000; }
+
+  /* Error banner */
+  .error-banner {
+    display: none;
+    background: #fef2f2;
+    border: 1px solid #fca5a5;
+    color: #991b1b;
+    padding: 12px 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    font-size: 14px;
+  }
+
+  .error-banner.visible { display: block; }
+
+  /* Preview section */
+  .preview-section { display: none; }
+  .preview-section.visible { display: block; }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .toolbar .info {
+    font-size: 14px;
+    color: #555;
+  }
+
+  .toolbar .actions { display: flex; gap: 10px; }
+
+  .btn {
+    padding: 10px 22px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .btn-primary {
+    background: #1a1a1a;
+    color: #fff;
+  }
+  .btn-primary:hover { background: #333; }
+  .btn-primary:disabled { background: #999; cursor: not-allowed; }
+
+  .btn-secondary {
+    background: #f5f5f5;
+    color: #1a1a1a;
+    border: 1px solid #e0e0e0;
+  }
+  .btn-secondary:hover { background: #eee; }
+
+  /* Preview grid */
+  .preview-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+  }
+
+  @media (max-width: 768px) {
+    .preview-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  @media (max-width: 480px) {
+    .preview-grid { grid-template-columns: 1fr 1fr; }
+  }
+
+  .preview-card {
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #eee;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    cursor: grab;
+    position: relative;
+  }
+
+  .preview-card:active { cursor: grabbing; }
+
+  .preview-card.drag-over-card {
+    border-color: #1a1a1a;
+    box-shadow: 0 0 0 2px rgba(26, 26, 26, 0.2);
+  }
+
+  .preview-card .thumb-wrap {
+    width: 100%;
+    aspect-ratio: 3/2;
+    overflow: hidden;
+    background: #eee;
+  }
+
+  .preview-card .thumb-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    pointer-events: none;
+  }
+
+  .preview-card .card-footer {
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .preview-card .card-number {
+    font-weight: 700;
+    font-size: 16px;
+  }
+
+  .preview-card .card-name {
+    font-size: 11px;
+    color: #999;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 60%;
+    text-align: right;
+  }
+
+  .preview-card .reorder-btns {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: flex;
+    gap: 3px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .preview-card:hover .reorder-btns { opacity: 1; }
+
+  .reorder-btns button {
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.55);
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+
+  .reorder-btns button:hover { background: rgba(0,0,0,0.8); }
+
+  /* Processing overlay */
+  .processing-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(255,255,255,0.85);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .processing-overlay.visible {
+    display: flex;
+  }
+
+  .processing-overlay .spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid #eee;
+    border-top-color: #6B8AF2;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .processing-overlay p {
+    font-size: 15px;
+    color: #555;
+  }
+
+  /* Hidden file input */
+  #file-input { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <img src="Branding/PFM Logo + Text - Transparent.png" alt="Photo Flow">
+  <h1>Top Ten Stamper</h1>
+</header>
+
+<div class="container">
+  <div class="error-banner" id="error-banner"></div>
+
+  <div class="drop-zone" id="drop-zone">
+    <h2>Drag your photos here</h2>
+    <p>Drop 1–10 images (JPEG or PNG). They'll be numbered in order.</p>
+    <button class="browse-btn" id="browse-btn">Browse Files</button>
+  </div>
+  <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" multiple>
+
+  <div class="preview-section" id="preview-section">
+    <div class="toolbar">
+      <span class="info" id="photo-count"></span>
+      <div class="actions">
+        <button class="btn btn-secondary" id="add-more-btn">Add More</button>
+        <button class="btn btn-secondary" id="clear-btn">Clear All</button>
+        <button class="btn btn-primary" id="download-btn">Download All</button>
+      </div>
+    </div>
+    <div class="preview-grid" id="preview-grid"></div>
+  </div>
+</div>
+
+<div class="processing-overlay" id="processing-overlay">
+  <div class="spinner"></div>
+  <p id="processing-text">Processing photos...</p>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // --- State ---
+  let photos = []; // { file, img (HTMLImageElement), thumbUrl }
+
+  // --- DOM refs ---
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('file-input');
+  const browseBtn = document.getElementById('browse-btn');
+  const errorBanner = document.getElementById('error-banner');
+  const previewSection = document.getElementById('preview-section');
+  const previewGrid = document.getElementById('preview-grid');
+  const photoCount = document.getElementById('photo-count');
+  const downloadBtn = document.getElementById('download-btn');
+  const clearBtn = document.getElementById('clear-btn');
+  const addMoreBtn = document.getElementById('add-more-btn');
+  const processingOverlay = document.getElementById('processing-overlay');
+  const processingText = document.getElementById('processing-text');
+
+  // --- Helpers ---
+  function showError(msg) {
+    errorBanner.textContent = msg;
+    errorBanner.classList.add('visible');
+    setTimeout(() => errorBanner.classList.remove('visible'), 5000);
+  }
+
+  function showProcessing(msg) {
+    processingText.textContent = msg;
+    processingOverlay.classList.add('visible');
+  }
+
+  function hideProcessing() {
+    processingOverlay.classList.remove('visible');
+  }
+
+  function loadImage(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => resolve({ file, img, thumbUrl: url });
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to load ' + file.name)); };
+      img.src = url;
+    });
+  }
+
+  // --- Stamp logic ---
+  function stampNumber(img, number) {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+
+    // Draw the original image
+    ctx.drawImage(img, 0, 0);
+
+    // Calculate stamp dimensions
+    const shortSide = Math.min(canvas.width, canvas.height);
+    const fontSize = Math.round(shortSide * 0.08);
+    const padX = Math.round(fontSize * 0.45);
+    const padY = Math.round(fontSize * 0.28);
+    const inset = Math.round(fontSize * 0.5);
+    const radius = Math.round(fontSize * 0.25);
+
+    // Measure text
+    ctx.font = 'bold ' + fontSize + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textBaseline = 'top';
+    const text = String(number);
+    const metrics = ctx.measureText(text);
+    const textWidth = metrics.width;
+    const textHeight = fontSize;
+
+    // Background rectangle
+    const boxX = inset;
+    const boxY = inset;
+    const boxW = textWidth + padX * 2;
+    const boxH = textHeight + padY * 2;
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(boxX, boxY, boxW, boxH, radius);
+    } else {
+      // Fallback for older browsers
+      ctx.moveTo(boxX + radius, boxY);
+      ctx.lineTo(boxX + boxW - radius, boxY);
+      ctx.arcTo(boxX + boxW, boxY, boxX + boxW, boxY + radius, radius);
+      ctx.lineTo(boxX + boxW, boxY + boxH - radius);
+      ctx.arcTo(boxX + boxW, boxY + boxH, boxX + boxW - radius, boxY + boxH, radius);
+      ctx.lineTo(boxX + radius, boxY + boxH);
+      ctx.arcTo(boxX, boxY + boxH, boxX, boxY + boxH - radius, radius);
+      ctx.lineTo(boxX, boxY + radius);
+      ctx.arcTo(boxX, boxY, boxX + radius, boxY, radius);
+    }
+    ctx.fill();
+
+    // Number text
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(text, boxX + padX, boxY + padY);
+
+    return canvas;
+  }
+
+  function canvasToBlob(canvas) {
+    return new Promise(resolve => {
+      canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.92);
+    });
+  }
+
+  // --- Drag & drop (file input) ---
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+  });
+
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('drag-over');
+  });
+
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    handleFiles(e.dataTransfer.files);
+  });
+
+  browseBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    fileInput.click();
+  });
+
+  dropZone.addEventListener('click', () => {
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) handleFiles(fileInput.files);
+    fileInput.value = '';
+  });
+
+  addMoreBtn.addEventListener('click', () => fileInput.click());
+
+  async function handleFiles(fileList) {
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    const newFiles = Array.from(fileList).filter(f => validTypes.includes(f.type));
+
+    if (newFiles.length === 0) {
+      showError('No valid images found. Please use JPEG, PNG, or WebP files.');
+      return;
+    }
+
+    const totalAfterAdd = photos.length + newFiles.length;
+    if (totalAfterAdd > 10) {
+      showError('Maximum 10 photos allowed. You have ' + photos.length + ', tried to add ' + newFiles.length + '.');
+      return;
+    }
+
+    showProcessing('Loading ' + newFiles.length + ' photo' + (newFiles.length > 1 ? 's' : '') + '...');
+
+    try {
+      for (const file of newFiles) {
+        const loaded = await loadImage(file);
+        photos.push(loaded);
+      }
+      renderPreview();
+    } catch (err) {
+      showError(err.message);
+    }
+
+    hideProcessing();
+  }
+
+  // --- Preview rendering ---
+  function renderPreview() {
+    if (photos.length === 0) {
+      previewSection.classList.remove('visible');
+      dropZone.style.display = '';
+      return;
+    }
+
+    dropZone.style.display = 'none';
+    previewSection.classList.add('visible');
+    photoCount.textContent = photos.length + ' photo' + (photos.length !== 1 ? 's' : '') + ' — drag to reorder';
+    previewGrid.innerHTML = '';
+
+    photos.forEach((photo, i) => {
+      const card = document.createElement('div');
+      card.className = 'preview-card';
+      card.draggable = true;
+      card.dataset.index = i;
+
+      // Thumbnail with stamp preview
+      const thumbWrap = document.createElement('div');
+      thumbWrap.className = 'thumb-wrap';
+      const img = document.createElement('img');
+      img.src = photo.thumbUrl;
+      img.alt = 'Photo ' + (i + 1);
+      thumbWrap.appendChild(img);
+
+      // Reorder buttons (fallback for touch)
+      const reorderBtns = document.createElement('div');
+      reorderBtns.className = 'reorder-btns';
+      if (i > 0) {
+        const leftBtn = document.createElement('button');
+        leftBtn.innerHTML = '&#8592;';
+        leftBtn.title = 'Move left';
+        leftBtn.addEventListener('click', e => { e.stopPropagation(); movePhoto(i, i - 1); });
+        reorderBtns.appendChild(leftBtn);
+      }
+      if (i < photos.length - 1) {
+        const rightBtn = document.createElement('button');
+        rightBtn.innerHTML = '&#8594;';
+        rightBtn.title = 'Move right';
+        rightBtn.addEventListener('click', e => { e.stopPropagation(); movePhoto(i, i + 1); });
+        reorderBtns.appendChild(rightBtn);
+      }
+      card.appendChild(reorderBtns);
+
+      // Footer
+      const footer = document.createElement('div');
+      footer.className = 'card-footer';
+      const numSpan = document.createElement('span');
+      numSpan.className = 'card-number';
+      numSpan.textContent = String(i + 1).padStart(2, '0');
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'card-name';
+      nameSpan.textContent = photo.file.name;
+      footer.appendChild(numSpan);
+      footer.appendChild(nameSpan);
+
+      card.appendChild(thumbWrap);
+      card.appendChild(footer);
+
+      // Drag events for reordering
+      card.addEventListener('dragstart', onDragStart);
+      card.addEventListener('dragover', onDragOver);
+      card.addEventListener('dragleave', onDragLeave);
+      card.addEventListener('drop', onCardDrop);
+      card.addEventListener('dragend', onDragEnd);
+
+      previewGrid.appendChild(card);
+    });
+
+    // Show add-more button only if under 10
+    addMoreBtn.style.display = photos.length < 10 ? '' : 'none';
+  }
+
+  function movePhoto(from, to) {
+    const [item] = photos.splice(from, 1);
+    photos.splice(to, 0, item);
+    renderPreview();
+  }
+
+  // --- Drag-and-drop reorder ---
+  let dragIndex = null;
+
+  function onDragStart(e) {
+    dragIndex = parseInt(this.dataset.index);
+    this.style.opacity = '0.4';
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', dragIndex);
+  }
+
+  function onDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    this.classList.add('drag-over-card');
+  }
+
+  function onDragLeave() {
+    this.classList.remove('drag-over-card');
+  }
+
+  function onCardDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.classList.remove('drag-over-card');
+    const toIndex = parseInt(this.dataset.index);
+    if (dragIndex !== null && dragIndex !== toIndex) {
+      movePhoto(dragIndex, toIndex);
+    }
+    dragIndex = null;
+  }
+
+  function onDragEnd() {
+    this.style.opacity = '';
+    dragIndex = null;
+    document.querySelectorAll('.preview-card').forEach(c => c.classList.remove('drag-over-card'));
+  }
+
+  // --- Download ---
+  downloadBtn.addEventListener('click', async () => {
+    if (photos.length === 0) return;
+
+    downloadBtn.disabled = true;
+    showProcessing('Stamping photo 1 of ' + photos.length + '...');
+
+    try {
+      const zip = new JSZip();
+
+      for (let i = 0; i < photos.length; i++) {
+        processingText.textContent = 'Stamping photo ' + (i + 1) + ' of ' + photos.length + '...';
+        const canvas = stampNumber(photos[i].img, i + 1);
+        const blob = await canvasToBlob(canvas);
+        const filename = String(i + 1).padStart(2, '0') + '.jpg';
+        zip.file(filename, blob);
+
+        // Yield to UI so the processing text updates
+        await new Promise(r => setTimeout(r, 0));
+      }
+
+      processingText.textContent = 'Creating ZIP...';
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+
+      // Trigger download
+      const today = new Date().toISOString().slice(0, 10);
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'top-10-stamped-' + today + '.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      showError('Download failed: ' + err.message);
+    }
+
+    hideProcessing();
+    downloadBtn.disabled = false;
+  });
+
+  // --- Clear ---
+  clearBtn.addEventListener('click', () => {
+    photos.forEach(p => URL.revokeObjectURL(p.thumbUrl));
+    photos = [];
+    renderPreview();
+  });
+})();
+</script>
+</body>
+</html>
