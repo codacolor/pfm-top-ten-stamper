@@ -370,49 +370,26 @@
     // Draw the original image
     ctx.drawImage(img, 0, 0);
 
-    // Calculate stamp dimensions
+    // Small circle in bottom-right corner
     const shortSide = Math.min(canvas.width, canvas.height);
-    const fontSize = Math.round(shortSide * 0.08);
-    const padX = Math.round(fontSize * 0.45);
-    const padY = Math.round(fontSize * 0.28);
-    const inset = Math.round(fontSize * 0.5);
-    const radius = Math.round(fontSize * 0.25);
+    const circleRadius = Math.round(shortSide * 0.03);
+    const inset = Math.round(circleRadius * 1.5);
+    const cx = canvas.width - inset;
+    const cy = canvas.height - inset;
 
-    // Measure text
-    ctx.font = 'bold ' + fontSize + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.textBaseline = 'top';
-    const text = String(number);
-    const metrics = ctx.measureText(text);
-    const textWidth = metrics.width;
-    const textHeight = fontSize;
-
-    // Background rectangle
-    const boxX = inset;
-    const boxY = inset;
-    const boxW = textWidth + padX * 2;
-    const boxH = textHeight + padY * 2;
-
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+    // Draw circle background
+    ctx.fillStyle = '#5275F6';
     ctx.beginPath();
-    if (ctx.roundRect) {
-      ctx.roundRect(boxX, boxY, boxW, boxH, radius);
-    } else {
-      // Fallback for older browsers
-      ctx.moveTo(boxX + radius, boxY);
-      ctx.lineTo(boxX + boxW - radius, boxY);
-      ctx.arcTo(boxX + boxW, boxY, boxX + boxW, boxY + radius, radius);
-      ctx.lineTo(boxX + boxW, boxY + boxH - radius);
-      ctx.arcTo(boxX + boxW, boxY + boxH, boxX + boxW - radius, boxY + boxH, radius);
-      ctx.lineTo(boxX + radius, boxY + boxH);
-      ctx.arcTo(boxX, boxY + boxH, boxX, boxY + boxH - radius, radius);
-      ctx.lineTo(boxX, boxY + radius);
-      ctx.arcTo(boxX, boxY, boxX + radius, boxY, radius);
-    }
+    ctx.arc(cx, cy, circleRadius, 0, Math.PI * 2);
     ctx.fill();
 
-    // Number text
+    // Draw white number centered in circle
+    const fontSize = Math.round(circleRadius * 1.2);
+    ctx.font = 'bold ' + fontSize + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(text, boxX + padX, boxY + padY);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(number), cx, cy);
 
     return canvas;
   }
