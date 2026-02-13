@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Top Ten Stamper — Photo Flow Method</title>
+<title>Pre-Post Size & Stamp — Photo Flow Method</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -281,7 +281,7 @@
 
 <header>
   <img src="Branding/PFM Logo + Text - Transparent.png" alt="Photo Flow">
-  <h1>Top Ten Stamper</h1>
+  <h1>Pre-Post Size & Stamp</h1>
 </header>
 
 <div class="container">
@@ -363,12 +363,17 @@
   // --- Stamp logic ---
   function stampNumber(img, number) {
     const canvas = document.createElement('canvas');
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
+    const MAX_LONG_SIDE = 2048;
+    const natW = img.naturalWidth;
+    const natH = img.naturalHeight;
+    const longSide = Math.max(natW, natH);
+    const scale = longSide > MAX_LONG_SIDE ? MAX_LONG_SIDE / longSide : 1;
+    canvas.width = Math.round(natW * scale);
+    canvas.height = Math.round(natH * scale);
     const ctx = canvas.getContext('2d');
 
-    // Draw the original image
-    ctx.drawImage(img, 0, 0);
+    // Draw the image (scaled down if needed)
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
     // Small circle in bottom-right corner
     const shortSide = Math.min(canvas.width, canvas.height);
@@ -396,7 +401,7 @@
 
   function canvasToBlob(canvas) {
     return new Promise(resolve => {
-      canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.92);
+      canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
     });
   }
 
@@ -594,8 +599,7 @@
         processingText.textContent = 'Stamping photo ' + (i + 1) + ' of ' + photos.length + '...';
         const canvas = stampNumber(photos[i].img, i + 1);
         const blob = await canvasToBlob(canvas);
-        const filename = String(i + 1).padStart(2, '0') + '.jpg';
-        zip.file(filename, blob);
+        zip.file(String(i + 1).padStart(2, '0') + '.jpg', blob);
 
         // Yield to UI so the processing text updates
         await new Promise(r => setTimeout(r, 0));
@@ -604,7 +608,6 @@
       processingText.textContent = 'Creating ZIP...';
       const zipBlob = await zip.generateAsync({ type: 'blob' });
 
-      // Trigger download
       const today = new Date().toISOString().slice(0, 10);
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement('a');
