@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pre-Post Size & Stamp — Photo Flow Method</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/piexifjs@1.0.6/piexif.min.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -141,6 +142,14 @@
     border: 1px solid #e0e0e0;
   }
   .btn-secondary:hover { background: #eee; }
+
+  .btn-tertiary {
+    background: #555;
+    color: #fff;
+    border: 1px solid #444;
+  }
+  .btn-tertiary:hover { background: #666; }
+  .btn-tertiary:disabled { background: #999; cursor: not-allowed; }
 
   /* Preview grid */
   .preview-grid {
@@ -301,6 +310,7 @@
       <div class="actions">
         <button class="btn btn-secondary" id="add-more-btn">Add More</button>
         <button class="btn btn-secondary" id="clear-btn">Clear All</button>
+        <button class="btn btn-tertiary" id="download-no-text-btn">Download Without Settings</button>
         <button class="btn btn-primary" id="download-btn">Download All</button>
       </div>
     </div>
@@ -318,7 +328,7 @@
   'use strict';
 
   // --- State ---
-  let photos = []; // { file, img (HTMLImageElement), thumbUrl }
+  let photos = []; // { file, img (HTMLImageElement), thumbUrl, exifBytes }
 
   // --- DOM refs ---
   const dropZone = document.getElementById('drop-zone');
@@ -329,6 +339,7 @@
   const previewGrid = document.getElementById('preview-grid');
   const photoCount = document.getElementById('photo-count');
   const downloadBtn = document.getElementById('download-btn');
+  const downloadNoTextBtn = document.getElementById('download-no-text-btn');
   const clearBtn = document.getElementById('clear-btn');
   const addMoreBtn = document.getElementById('add-more-btn');
   const processingOverlay = document.getElementById('processing-overlay');
@@ -354,54 +365,189 @@
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
       const img = new Image();
-      img.onload = () => resolve({ file, img, thumbUrl: url });
-      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to load ' + file.name)); };
+      const reader = new FileReader();
+
+      let exifBytes = null;
+      let imageLoaded = false;
+      let exifRead = false;
+
+      function checkComplete() {
+        if (imageLoaded && exifRead) {
+          resolve({ file, img, thumbUrl: url, exifBytes });
+        }
+      }
+
+      img.onload = () => {
+        imageLoaded = true;
+        checkComplete();
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Failed to load ' + file.name));
+      };
+
+      reader.onload = (e) => {
+        try {
+          const data = e.target.result;
+          if (typeof piexif !== 'undefined') {
+            exifBytes = piexif.load(data);
+          }
+        } catch (err) {
+          // No EXIF data or error reading it - that's okay
+        }
+        exifRead = true;
+        checkComplete();
+      };
+
+      reader.onerror = () => {
+        exifRead = true;
+        checkComplete();
+      };
+
       img.src = url;
+      reader.readAsDataURL(file);
     });
   }
 
   // --- Stamp logic ---
-  function stampNumber(img, number) {
+  function stampNumber(img, number, exifBytes, showMetadataText = true) {
     const canvas = document.createElement('canvas');
     const MAX_LONG_SIDE = 2048;
     const natW = img.naturalWidth;
     const natH = img.naturalHeight;
+
+    // Calculate scale and canvas size (no EXIF rotation applied)
     const longSide = Math.max(natW, natH);
     const scale = longSide > MAX_LONG_SIDE ? MAX_LONG_SIDE / longSide : 1;
     canvas.width = Math.round(natW * scale);
     canvas.height = Math.round(natH * scale);
     const ctx = canvas.getContext('2d');
 
-    // Draw the image (scaled down if needed)
+    // Draw the image as-is (EXIF only used for metadata text, not rotation)
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-    // Small circle in bottom-right corner
+    // Small circle stamp in bottom-right corner
     const shortSide = Math.min(canvas.width, canvas.height);
     const circleRadius = Math.round(shortSide * 0.03);
     const inset = Math.round(circleRadius * 1.5);
     const cx = canvas.width - inset;
     const cy = canvas.height - inset;
 
-    // Draw circle background
     ctx.fillStyle = '#5275F6';
     ctx.beginPath();
     ctx.arc(cx, cy, circleRadius, 0, Math.PI * 2);
     ctx.fill();
 
     // Draw white number centered in circle
-    const fontSize = Math.round(circleRadius * 1.2);
-    ctx.font = 'bold ' + fontSize + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    const numberSize = Math.round(circleRadius * 1.2);
+    ctx.font = 'bold ' + numberSize + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(number), cx, cy);
 
+    // Extract and draw metadata next to circle
+    if (exifBytes && typeof piexif !== 'undefined') {
+      try {
+        const exifSub = exifBytes['Exif'] || {};
+
+        // Build metadata text: 35mm equiv · aperture · shutter · ISO
+        const focalLength35 = exifSub[piexif.ExifIFD.FocalLengthIn35mmFilm];
+        const focalLength = exifSub[piexif.ExifIFD.FocalLength];
+        const fNumber = exifSub[piexif.ExifIFD.FNumber];
+        const expTime = exifSub[piexif.ExifIFD.ExposureTime];
+        const iso = exifSub[piexif.ExifIFD.ISOSpeedRatings];
+
+        let metaText = '';
+
+        // Focal length and 35mm equiv
+        if (focalLength) {
+          const fl = Math.round(focalLength[0] / focalLength[1]);
+          const fl35 = focalLength35 || fl;
+          metaText = fl + 'mm (' + fl35 + 'mm)';
+        }
+
+        // Aperture
+        if (fNumber) {
+          const f = (fNumber[0] / fNumber[1]).toFixed(1);
+          metaText += (metaText ? ' · ' : '') + 'f/' + f;
+        }
+
+        // Shutter
+        if (expTime) {
+          const exp = expTime[0] / expTime[1];
+          const expStr = exp >= 1 ? exp + 's' : '1/' + Math.round(1 / exp) + 's';
+          metaText += (metaText ? ' · ' : '') + expStr;
+        }
+
+        // ISO
+        if (iso) {
+          metaText += (metaText ? ' · ' : '') + 'ISO ' + iso;
+        }
+
+        if (metaText && showMetadataText) {
+          // Draw white text with drop shadow next to circle (thinner weight for subtlety)
+          const metaFontSize = Math.round(circleRadius * 0.8);
+          ctx.font = '500 ' + metaFontSize + 'px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+          // Drop shadow
+          ctx.shadowColor = 'rgba(0, 0, 0, 0.7)';
+          ctx.shadowBlur = 4;
+          ctx.shadowOffsetX = 1;
+          ctx.shadowOffsetY = 1;
+
+          // White text positioned to the left of the circle
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(metaText, cx - circleRadius - 12, cy);
+
+          // Reset shadow
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+        }
+      } catch (err) {
+        console.warn('Failed to render EXIF metadata:', err);
+      }
+    }
+
     return canvas;
   }
 
-  function canvasToBlob(canvas) {
+  function canvasToBlob(canvas, exifBytes) {
     return new Promise(resolve => {
-      canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+      // If we have EXIF data, insert it back into the JPEG
+      if (exifBytes && typeof piexif !== 'undefined') {
+        try {
+          // Reset orientation to 1 (normal) since canvas pixel data is already correctly oriented
+          if (exifBytes['0th']) {
+            exifBytes['0th'][piexif.ImageIFD.Orientation] = 1;
+          }
+          const exifStr = piexif.dump(exifBytes);
+          const withExif = piexif.insert(exifStr, dataUrl);
+
+          // Convert data URL to Blob
+          fetch(withExif)
+            .then(res => res.blob())
+            .then(blob => resolve(blob));
+        } catch (err) {
+          // If EXIF insertion fails, fall back to image without EXIF
+          console.warn('Failed to insert EXIF data:', err);
+          fetch(dataUrl)
+            .then(res => res.blob())
+            .then(blob => resolve(blob));
+        }
+      } else {
+        // No EXIF data, just convert to blob
+        fetch(dataUrl)
+          .then(res => res.blob())
+          .then(blob => resolve(blob));
+      }
     });
   }
 
@@ -597,8 +743,8 @@
 
       for (let i = 0; i < photos.length; i++) {
         processingText.textContent = 'Stamping photo ' + (i + 1) + ' of ' + photos.length + '...';
-        const canvas = stampNumber(photos[i].img, i + 1);
-        const blob = await canvasToBlob(canvas);
+        const canvas = stampNumber(photos[i].img, i + 1, photos[i].exifBytes, true);
+        const blob = await canvasToBlob(canvas, photos[i].exifBytes);
         zip.file(String(i + 1).padStart(2, '0') + '.jpg', blob);
 
         // Yield to UI so the processing text updates
@@ -623,6 +769,46 @@
 
     hideProcessing();
     downloadBtn.disabled = false;
+  });
+
+  // --- Download without metadata text ---
+  downloadNoTextBtn.addEventListener('click', async () => {
+    if (photos.length === 0) return;
+
+    downloadNoTextBtn.disabled = true;
+    showProcessing('Stamping photo 1 of ' + photos.length + '...');
+
+    try {
+      const zip = new JSZip();
+
+      for (let i = 0; i < photos.length; i++) {
+        processingText.textContent = 'Stamping photo ' + (i + 1) + ' of ' + photos.length + '...';
+        const canvas = stampNumber(photos[i].img, i + 1, photos[i].exifBytes, false);
+        const blob = await canvasToBlob(canvas, photos[i].exifBytes);
+        zip.file(String(i + 1).padStart(2, '0') + '.jpg', blob);
+
+        // Yield to UI so the processing text updates
+        await new Promise(r => setTimeout(r, 0));
+      }
+
+      processingText.textContent = 'Creating ZIP...';
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+
+      const today = new Date().toISOString().slice(0, 10);
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'top-10-stamped-no-settings-' + today + '.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      showError('Download failed: ' + err.message);
+    }
+
+    hideProcessing();
+    downloadNoTextBtn.disabled = false;
   });
 
   // --- Clear ---
