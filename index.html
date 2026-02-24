@@ -410,6 +410,101 @@
     });
   }
 
+  // --- Crop factor lookup ---
+  function getCropFactor(make, model) {
+    make = (make || '').toLowerCase().trim();
+    model = (model || '').toLowerCase().trim();
+    if (!make && !model) return null;
+
+    // Smartphones — skip 35mm equiv entirely
+    if (make.includes('apple') || make.includes('samsung') || make.includes('google') ||
+        make.includes('huawei') || make.includes('xiaomi') || make.includes('oneplus') ||
+        model.includes('iphone') || model.includes('ipad') || model.includes('pixel') ||
+        model.includes('galaxy')) {
+      return 'phone';
+    }
+
+    // Fujifilm
+    if (make.includes('fuji')) {
+      if (model.match(/gfx/)) return 0.79;  // Medium format
+      return 1.5;  // X-series APS-C
+    }
+
+    // Hasselblad / Phase One — medium format
+    if (make.includes('hasselblad') || make.includes('phase one')) return 0.79;
+
+    // Canon
+    if (make.includes('canon')) {
+      // Full frame bodies
+      if (model.match(/eos r($|\s|3|5|6|8|p)/i)) return 1.0;
+      if (model.match(/eos-?1d/i)) return 1.0;
+      if (model.match(/eos (5d|6d)/i)) return 1.0;
+      // APS-C bodies
+      if (model.match(/eos (r7|r10|r50|r100)/i)) return 1.6;
+      if (model.match(/eos (7d|77d|80d|90d)/i)) return 1.6;
+      if (model.match(/eos (rebel|kiss|\d{3,4}d)/i)) return 1.6;
+      if (model.match(/eos m\d/i)) return 1.6;
+      if (model.match(/powershot/i)) return 2.7;  // 1" compacts
+      return 1.6;  // Default Canon = APS-C (most common for students)
+    }
+
+    // Nikon
+    if (make.includes('nikon')) {
+      // Full frame Z-mount (single digit or Zf)
+      if (model.match(/z\s?[5-9]($|\s|ii)/i) || model.match(/zf/i)) return 1.0;
+      // Full frame DSLRs
+      if (model.match(/d[3-6]($|\s|s|x)/i)) return 1.0;
+      if (model.match(/d(850|810|800|780|750|700|610|600|df)/i)) return 1.0;
+      // APS-C Z-mount
+      if (model.match(/z\s?(30|50|fc)/i)) return 1.5;
+      // APS-C DSLRs
+      if (model.match(/d\d{4}/)) return 1.5;  // D3xxx, D5xxx, D7xxx
+      // 1" Nikon compacts
+      if (model.match(/nikon 1|coolpix/i)) return 2.7;
+      return 1.5;  // Default Nikon = APS-C
+    }
+
+    // Sony
+    if (make.includes('sony')) {
+      // Full frame
+      if (model.match(/a[79]($|\s|[ris]|ii|iii|iv|v|c)/i)) return 1.0;  // A7, A9 series
+      if (model.match(/a1($|\s|ii)/i)) return 1.0;
+      if (model.match(/ilce-(7|9|1($|\s))/i)) return 1.0;
+      // APS-C
+      if (model.match(/a6\d{3}/i) || model.match(/ilce-6/i)) return 1.5;
+      if (model.match(/zv-e10/i)) return 1.5;
+      // 1" sensor compacts
+      if (model.match(/rx10|rx100|dsc-rx1[0]/i)) return 2.7;
+      // Full frame compacts
+      if (model.match(/rx1($|\s|r)/i) || model.match(/dsc-rx1($|\s|r)/i)) return 1.0;
+      return 1.5;
+    }
+
+    // Olympus / OM System — Micro Four Thirds
+    if (make.includes('olympus') || make.match(/om (digital|system)/)) return 2.0;
+
+    // Panasonic
+    if (make.includes('panasonic')) {
+      if (model.match(/dc-s[15]/i) || model.match(/lumix s/i)) return 1.0;  // L-mount full frame
+      return 2.0;  // Lumix G-series = MFT
+    }
+
+    // Leica
+    if (make.includes('leica')) {
+      if (model.match(/cl|tl/i)) return 1.5;  // APS-C
+      return 1.0;  // Most Leica = full frame
+    }
+
+    // Pentax / Ricoh
+    if (make.includes('pentax') || make.includes('ricoh')) {
+      if (model.match(/k-1/i) || model.match(/645/i)) return 1.0;
+      if (model.match(/gr\s?iii/i)) return 1.5;
+      return 1.5;  // Default Pentax = APS-C
+    }
+
+    return null;  // Unknown — don't guess
+  }
+
   // --- Stamp logic ---
   function stampNumber(img, number, exifBytes, showMetadataText = true) {
     const canvas = document.createElement('canvas');
@@ -464,8 +559,30 @@
         // Focal length and 35mm equiv
         if (focalLength) {
           const fl = Math.round(focalLength[0] / focalLength[1]);
-          const fl35 = focalLength35 || fl;
-          metaText = fl + 'mm (' + fl35 + 'mm)';
+          let fl35 = focalLength35;
+
+          // If 35mm equiv missing from EXIF, calculate from crop factor
+          if (!fl35) {
+            const make = exifBytes['0th'] ? exifBytes['0th'][piexif.ImageIFD.Make] : null;
+            const model = exifBytes['0th'] ? exifBytes['0th'][piexif.ImageIFD.Model] : null;
+            const cropFactor = getCropFactor(make, model);
+
+            if (cropFactor === 'phone') {
+              // Smartphones: just show focal length, no equiv
+              metaText = fl + 'mm';
+            } else if (cropFactor !== null) {
+              fl35 = Math.round(fl * cropFactor);
+            }
+          }
+
+          // Build focal length text (if not already set by phone branch)
+          if (!metaText) {
+            if (fl35 && fl35 !== fl) {
+              metaText = fl + 'mm (' + fl35 + 'mm)';
+            } else {
+              metaText = fl + 'mm';
+            }
+          }
         }
 
         // Aperture
